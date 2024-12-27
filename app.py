@@ -2,139 +2,175 @@ import streamlit as st
 import subprocess
 import os
 
-# Função para verificar se a branch existe
-def branch_exists(branch_name, project_root):
-    result = subprocess.run(f"git branch --list {branch_name}", shell=True, cwd=project_root, capture_output=True, text=True)
-    return bool(result.stdout.strip())
+# Função para executar comandos no terminal
+def execute_command(command):
+    """Execute a shell command and return its output."""
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    return result.stdout, result.stderr
 
-# Função para verificar o status do repositório Git e remover alterações não comitadas e modificadas
-def reset_all_changes(project_root, selected_directories):
-    changes_found = False  # Variável para controlar se alterações foram encontradas
-    for project in selected_directories:
-        project_dir = os.path.join(project_root, project)
-        os.chdir(project_dir)
+st.title("Gerenciamento de Branch e Compilação de Projeto")
 
-        # Verifica se há alterações não comitadas ou modificações nos arquivos
-        status_result = subprocess.run("git status --porcelain", shell=True, cwd=project_dir, capture_output=True, text=True)
+# Seleção do diretório onde estão os projetos
+st.subheader("Seleção do Diretório dos Projetos")
+if 'project_directory' not in st.session_state:
+    st.session_state['project_directory'] = ""
 
-        if status_result.stdout.strip():  # Se houver alterações não comitadas ou modificações
-            st.warning(f"Há alterações não comitadas ou modificações no projeto '{project}'.")
-            changes_found = True
-            st.info(f"Removendo alterações no projeto '{project}'...")
+project_directory = st.text_input(
+    "Informe o caminho do diretório dos projetos:",
+    st.session_state['project_directory']
+)
 
-            # Comando para resetar as alterações
-            subprocess.run("git reset --hard", shell=True, cwd=project_dir)  # Remove todas as alterações
-            st.success(f"As alterações foram removidas no projeto '{project}'.")
-        else:
-            st.info(f"Não há alterações não comitadas ou modificações no projeto '{project}'. Continuando...")
-
-    return changes_found
-
-# Função para verificar e atualizar a branch
-def checkout_and_update_branch(project_root, target_branch, selected_project):
-    project_dir = os.path.join(project_root, selected_project)
-    os.chdir(project_dir)
-
-    # Verifica se a branch de destino existe
-    if not branch_exists(target_branch, project_dir):
-        st.error(f"A branch '{target_branch}' não existe no projeto '{selected_project}'. Encerrando o processo.")
-        return False
-    
-    # Faz o checkout da branch e atualiza com 'git pull'
-    st.info(f"Fazendo checkout para a branch '{target_branch}' no projeto '{selected_project}'...")
-    subprocess.run(f"git checkout {target_branch}", shell=True, cwd=project_dir)
-    st.info(f"Branch '{target_branch}' verificada. Atualizando com 'git pull' no projeto '{selected_project}'...")
-    subprocess.run("git pull", shell=True, cwd=project_dir)
-    st.success(f"Branch '{target_branch}' do projeto '{selected_project}' está atualizada.")
-    return True
-
-# Função para executar comandos do Flutter em cada diretório
-def run_flutter_commands(project_root, selected_directories):
-    for dir_name in selected_directories:
-        dir_path = os.path.join(project_root, dir_name)
-        if os.path.exists(dir_path):
-            st.info(f"Processando diretório: {dir_name}")
-            os.chdir(dir_path)
-            st.write(f"Executando 'flutter clean' em {dir_name}...")
-            subprocess.run("flutter clean", shell=True)
-            st.write(f"Executando 'flutter pub get' em {dir_name}...")
-            subprocess.run("flutter pub get", shell=True)
-            os.chdir(project_root)
-        else:
-            st.warning(f"Diretório '{dir_name}' não encontrado. Pulando...")
-
-    models_dir = os.path.join(project_root, "models")
-    if os.path.exists(models_dir):
-        st.info("Executando build_runner no diretório 'models'...")
-        os.chdir(models_dir)
-        subprocess.run("flutter packages pub run build_runner build --delete-conflicting-outputs", shell=True)
-        os.chdir(project_root)
+if st.button("Confirmar Diretório"):
+    if os.path.isdir(project_directory):
+        st.session_state['project_directory'] = project_directory
+        st.success(f"Diretório selecionado: {project_directory}")
     else:
-        st.warning("Diretório 'models' não encontrado.")
+        st.error("O caminho informado não é um diretório válido. Por favor, tente novamente.")
 
-# Interface do Streamlit
-st.title("Gerenciamento de Branch e Atualização do Projeto Flutter")
-
-# Campo para seleção do caminho do projeto
-project_root = st.text_input("Insira o caminho para a pasta do projeto")
-
-if project_root and os.path.isdir(project_root):
-    # Listar diretórios automaticamente após a seleção do projeto, ignorando pastas que começam com ponto (.)
-    all_directories = [d for d in os.listdir(project_root) if os.path.isdir(os.path.join(project_root, d)) and not d.startswith('.')]
-    
-    # Exibir checkboxes para os diretórios encontrados
-    selected_directories = st.multiselect("Selecione os diretórios para atualização:", all_directories, default=all_directories)
-
-    # Campo de entrada para o nome da branch de destino (apenas para um projeto específico)
-    target_branch = st.text_input("Nome da branch de destino (apenas para o projeto selecionado)")
-
-    # Dropdown para selecionar o projeto específico que terá a branch atualizada
-    selected_project = st.selectbox("Selecione o projeto para atualizar a branch", selected_directories)
-
-    # Variável para controlar o estado de execução
-    if 'process_in_progress' not in st.session_state:
-        st.session_state.process_in_progress = False
-        st.session_state.changes_removed = False
-
-    # Botão para iniciar o processo
-    if st.button("Iniciar Processo") and selected_directories:
-        if selected_project and target_branch:  # Verifica se o nome da branch e o projeto foram fornecidos
-            os.chdir(project_root)
-            
-            # Limpa as alterações não comitadas e modificações em todos os projetos selecionados
-            if not st.session_state.changes_removed:
-                changes_found = reset_all_changes(project_root, selected_directories)
-                
-                if changes_found:  # Se alterações foram encontradas e removidas, reinicia o processo
-                    st.session_state.process_in_progress = False  # Impede a continuação do processo até o usuário confirmar
-                    st.session_state.changes_removed = True  # Marca que as alterações foram removidas
-                    st.button("Deseja iniciar o processo novamente?", key="restart")  # Espera a interação do usuário
-                    st.stop()  # Interrompe o fluxo até o usuário confirmar
-
-                # Atualiza o projeto específico com a nova branch
-                if not changes_found:
-                    if checkout_and_update_branch(project_root, target_branch, selected_project):
-                        # Atualiza os outros diretórios sem fazer o checkout de branch
-                        remaining_directories = [d for d in selected_directories if d != selected_project]
-                        run_flutter_commands(project_root, remaining_directories)
-                        st.success("Processo concluído com sucesso.")
-                    else:
-                        st.error(f"O processo foi interrompido devido a problemas com a branch ou alterações pendentes no projeto '{selected_project}'.")
-            else:
-                st.session_state.process_in_progress = True  # Marca o processo como em andamento
-                # Atualiza o projeto específico com a nova branch
-                if checkout_and_update_branch(project_root, target_branch, selected_project):
-                    # Atualiza os outros diretórios sem fazer o checkout de branch
-                    remaining_directories = [d for d in selected_directories if d != selected_project]
-                    run_flutter_commands(project_root, remaining_directories)
-                    st.success("Processo concluído com sucesso.")
-
-    # Botão para reiniciar o processo
-    if st.session_state.changes_removed and not st.session_state.process_in_progress:
-        if st.button("Iniciar o processo novamente"):
-            st.session_state.process_in_progress = False
-            st.session_state.changes_removed = False
-            st.experimental_rerun()  # Reinicia o fluxo de execução do Streamlit
-
+if 'project_directory' in st.session_state and st.session_state['project_directory']:
+    st.write(f"Diretório atual dos projetos: {st.session_state['project_directory']}")
 else:
-    st.warning("Por favor, insira um caminho válido para o projeto.")
+    st.warning("Por favor, informe e confirme o diretório dos projetos.")
+
+# Gerenciamento de branch
+st.subheader("Gerenciamento de Branch")
+if 'project_directory' in st.session_state and st.session_state['project_directory']:
+    os.chdir(st.session_state['project_directory'])
+    git_branches, git_error = execute_command("git branch")
+    if git_error:
+        st.error(f"Erro ao listar branches: {git_error}")
+    else:
+        st.write("Branches disponíveis:")
+        st.text(git_branches)
+
+    branch = st.text_input("Informe a branch para checkout:")
+    if st.button("Realizar Checkout"):
+        if branch:
+            # Verificar a branch ativa
+            current_branch, current_branch_error = execute_command("git rev-parse --abbrev-ref HEAD")
+            if current_branch_error:
+                st.error(f"Erro ao verificar branch atual: {current_branch_error}")
+            else:
+                current_branch = current_branch.strip()
+                if current_branch == branch:
+                    st.info(f"Já está na branch '{branch}'. Executando git pull...")
+                    pull_cmd = "git pull"
+                    stdout_pull, stderr_pull = execute_command(pull_cmd)
+                    if stderr_pull:
+                        st.error(f"Erro no pull: {stderr_pull}")
+                    else:
+                        st.write("Saída do Pull:")
+                        st.text(stdout_pull)
+                else:
+                    checkout_cmd = f"git checkout {branch} && git pull"
+                    stdout, stderr = execute_command(checkout_cmd)
+                    if stderr:
+                        st.error(f"Erro no checkout ou pull: {stderr}")
+                    else:
+                        st.write("Saída do comando:")
+                        st.text(stdout)
+        else:
+            st.warning("Por favor, informe uma branch válida.")
+else:
+    st.warning("Selecione o diretório dos projetos para continuar.")
+
+# Menu de compilação
+st.subheader("Menu de Compilação")
+compilation_option = st.selectbox(
+    "Escolha uma opção:",
+    ["Compile ALL", "Compile ERP", "Compile API", "Compile WAYCHEF"]
+)
+
+branch_origin = st.radio(
+    "Qual foi a branch de origem?",
+    ["working", "rc", "master"]
+)
+
+if st.button("Iniciar Merge e Push"):
+    if 'project_directory' in st.session_state and st.session_state['project_directory']:
+        # Verificar alterações locais antes do merge
+        changes_cmd = "git status --porcelain"
+        stdout_changes, stderr_changes = execute_command(changes_cmd)
+        if stdout_changes:
+            st.warning("Existem alterações locais não commitadas. Salvando alterações temporariamente (stash)...")
+            stash_cmd = "git stash"
+            stdout_stash, stderr_stash = execute_command(stash_cmd)
+            if stderr_stash:
+                st.error(f"Erro ao executar stash: {stderr_stash}")
+            else:
+                st.write("Alterações locais salvas temporariamente:")
+                st.text(stdout_stash)
+
+        merge_cmd = f"git merge origin/{branch_origin}"
+        push_cmd = f"git push origin {branch}"
+        stdout_merge, stderr_merge = execute_command(merge_cmd)
+        stdout_push, stderr_push = execute_command(push_cmd)
+
+        if stderr_merge:
+            st.error(f"Erro no merge: {stderr_merge}")
+        else:
+            st.write("Saída do Merge:")
+            st.text(stdout_merge)
+
+        if stderr_push:
+            st.error(f"Erro no push: {stderr_push}")
+        else:
+            st.write("Saída do Push:")
+            st.text(stdout_push)
+
+        # Restaurar alterações do stash, se necessário
+        if stdout_changes:
+            st.info("Restaurando alterações locais (stash apply)...")
+            apply_stash_cmd = "git stash apply"
+            stdout_apply, stderr_apply = execute_command(apply_stash_cmd)
+            if stderr_apply:
+                st.error(f"Erro ao restaurar stash: {stderr_apply}")
+            else:
+                st.write("Alterações locais restauradas:")
+                st.text(stdout_apply)
+    else:
+        st.warning("Selecione o diretório dos projetos para continuar.")
+
+# Escolha do banco
+st.subheader("Configuração do Banco")
+database = st.selectbox(
+    "Escolha o banco:",
+    ["Waybe-working", "Waybe-RC", "Waybe-master", "Waybe-email"]
+)
+
+# Origem do banco
+origin = st.radio(
+    "Origem do banco:",
+    ["MeuBanco", "Outro", "Dev"]
+)
+
+if st.button("Configurar Banco e Compilar"):
+    if 'project_directory' in st.session_state and st.session_state['project_directory']:
+        db_config = {
+            "MeuBanco": {"porta": "3308", "senha": "generator", "usuario": "generator", "ip": "127.0.0.1"},
+            "Outro": {"porta": "3308", "senha": "generator", "usuario": "generator", "ip": "192.168.5.20"},
+            "Dev": {"porta": "3306", "senha": "generator", "usuario": "generator", "ip": "192.168.5.237"},
+        }
+
+        banco_config = db_config[origin]
+        st.write("Configuração do banco:")
+        st.json(banco_config)
+
+        compile_scripts = {
+            "Compile ALL": "Bats/CompileALL/CompileWaybe",
+            "Compile ERP": "Bats/CompileERP/CompileWaybe",
+            "Compile API": "Bats/CompileAPI/CompileWaybe",
+            "Compile WAYCHEF": "Bats/CompileWaychef/CompileWaybe",
+        }
+
+        compile_script = compile_scripts[compilation_option]
+        compile_cmd = f"{compile_script}.bat {banco_config['porta']} {banco_config['senha']} {banco_config['usuario']} {banco_config['ip']} {database}"
+
+        stdout_compile, stderr_compile = execute_command(compile_cmd)
+        if stderr_compile:
+            st.error(f"Erro na compilação: {stderr_compile}")
+        else:
+            st.write("Saída da Compilação:")
+            st.text(stdout_compile)
+    else:
+        st.warning("Selecione o diretório dos projetos para continuar.")
