@@ -66,9 +66,19 @@ def executar_jboss(debug_mode, debug_port, server_opts):
         process = subprocess.run(command, text=True, capture_output=True, check=True)
         st.success("JBoss iniciado com sucesso!")
         st.text(process.stdout)
+        return process.stdout, process.stderr
     except subprocess.CalledProcessError as e:
         st.error("Erro ao iniciar o JBoss:")
         st.text(e.stderr)
+        return None, e.stderr
+
+# Função para exportar o log para um arquivo .txt
+def exportar_log(log, filename):
+    desktop = Path.home() / "Desktop"
+    filepath = desktop / filename
+    with open(filepath, "w") as file:
+        file.write(log)
+    st.success(f"Log exportado com sucesso para {filepath}")
 
 # Interface principal
 st.title("Gerenciador de Bootstrap JBoss")
@@ -110,4 +120,8 @@ if st.button("Iniciar JBoss"):
     if erros:
         st.error("Corrija os erros antes de iniciar o JBoss.")
     else:
-        executar_jboss(debug_mode, debug_port, server_opts)
+        stdout, stderr = executar_jboss(debug_mode, debug_port, server_opts)
+        if stdout or stderr:
+            log = f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
+            if st.button("Exportar Log para TXT"):
+                exportar_log(log, "jboss_log.txt")
