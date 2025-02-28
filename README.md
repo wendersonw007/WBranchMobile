@@ -56,3 +56,8 @@ Este projeto foi desenvolvido como uma ferramenta de portfólio, demonstrando ha
 - **Autenticação Git Integrada**: Possibilidade de integrar autenticação automática para repositórios privados.
 - **Feedback em Tempo Real**: Adição de logs em tempo real para melhor acompanhamento do progresso das ações.
 - **Suporte para Outras Plataformas**: Possibilidade de integração com sistemas como Bitbucket e GitLab.
+
+
+
+## Atualizações
+- **Lembrar de configurar um pdf
